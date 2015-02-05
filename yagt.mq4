@@ -5,12 +5,12 @@
 //+------------------------------------------------------------------+
 #property copyright "Lorenzo Pedrotti & Simone Forini"
 #property link      "www.wannabetrader.com"
-#property version   "1.02"
+#property version   "2.00"
 #property strict
 //--- input parameters
 input string      ppSignature = "YAGT_0001"; // Session initial signature
 input bool        ppChangeSig = false; // Change signature at trend change
-input bool        ppCover = false; // Place a cover order at trend change
+input bool        ppCover = false; // Place a cover orders at trend change
 
 input bool        ppLongPos = true; // Open long positions
 input bool        ppShortPos = true; // Open short positions
@@ -19,15 +19,16 @@ input int         ppInitDiff = 300; // Points up/down of the first pending order
 input int         ppMaxPos = 10; // Max allowed positions (per trend/signature)
 
 input int         ppStep = 300; // Points before open a new position
+input int         ppStepCover = 600; // Points bebore open a new cover position
 input double      ppInitVolume = 0.01; // Size of the first lot
-input double      ppIncrease = 0.003; // Size of the increment lot
+input double      ppIncrease = 0.0; // Size of the increment lot
 
 
-input double      ppCloseProfitLong = 2; // Close LONG when profit is at least (euro)
-input double      ppCloseProfitShort = 2; // Close SHORT when profit is at least (euro)
+input double      ppCloseProfitLong = 5.0; // Close LONG when profit is at least (euro)
+input double      ppCloseProfitShort = 5.0; // Close SHORT when profit is at least (euro)
 
-input bool        ppChopModeLong = true; // Close only the newsest LONG positions
-input bool        ppChopModeShort = true; // Close only the newsest SHORT positions
+input bool        ppChopModeLong = true; // Close only the newest LONG positions
+input bool        ppChopModeShort = true; // Close only the newest SHORT positions
 
 input bool        ppStopEven = false; // Close ALL at profit and STOP
 
@@ -144,12 +145,11 @@ void DeletePending() {
 void OpenNewOrders() {
    if (ggStopped) return;
    if (ggPending) return;
-// determina se inserire un nuovo ordine
+   
+   // determina se inserire un nuovo ordine di rinforzo (stesso trend)
    int o=0;
    double bid_price = ggShorts.worst+ppStep*Point;
-   double ask_price = ggLongs.worst-ppStep*Point;
-   
-   
+   double ask_price = ggLongs.worst-ppStep*Point;   
 
    if (ggOrderTrend == "DOWN") {
       MoveLine("NextEntry",bid_price);
@@ -158,65 +158,49 @@ void OpenNewOrders() {
       MoveLine("NextEntry",ask_price);
    }
    
-
+   // condizione generale per eseguire un trade
    if ((ggOrderTrend == ggTrend) || ((ggTrend=="n/a") && (ggOrderTrend!="n/a") )  ) {
       if ((ggOrderTrend == "DOWN") && (Bid > bid_price) && (ggShorts.positions < ppMaxPos) && (ppShortPos) ) {
          double vol = ggShorts.positions * ppIncrease + ppInitVolume;
          o=OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_S");
+         ggShorts.positions++;
       }
-      
       if ((ggOrderTrend == "UP") && (Ask < ask_price) && (ggLongs.positions < ppMaxPos) && (ppLongPos) ) {
          double vol = ggLongs.positions * ppIncrease + ppInitVolume;
          o=OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_L");
+         ggLongs.positions++;
       }
+   
    } 
-   if ((ggOrderTrend != ggTrend) && (ggTrend != "n/a"))  {
-      /*
-      Piazzo un ordine contrario al precedente trend composto dalla somma dei lotti investiti
-      Poi procedo normalmente
-      */
-	   if (ppCover) {
-	      // Chiude le posizioni hedging precedenti
-         for (int k = OrdersTotal()-1; k>=0; k--) {
-            if (OrderSelect(k,SELECT_BY_POS,MODE_TRADES)) 
-               if ((OrderSymbol() == Symbol()) && (OrderComment() == ppSignature + "_H")) {
-                  // dovrebbe essercene solo una
-                  int mode = 0;
-                  if (OrderType() == OP_BUY) mode = MODE_BID; 
-                  if (OrderType() == OP_SELL) mode = MODE_ASK;
-                  int rt = OrderClose(OrderTicket(),OrderLots(),MarketInfo(Symbol(),mode),200);
-                  ggBalance+=OrderProfit();
-                  ChangeLabel("Balance",StringFormat("Profit: %.2f" ,ggBalance));
-                  string subj = StringFormat("YAGT. Chiuso HEDGING su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
-                  string mex = StringFormat("ORDINE CHIUSO\n\nSimbolo: %s\nLotti: %.2f\nProfit: %.2f\n",
-                                          Symbol(),OrderLots(),OrderProfit());
-                  SendMail(subj,mex);     
-               }
-         }
-	   }
-	   
-	   double vol;
-      ggOrderTrend = ggTrend;
-      if ((ggOrderTrend == "DOWN") && (ppShortPos)) {
-         if (ppCover)  {
-            vol = ggLongs.lots;
-            o=OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_H");
-         }
-         vol = ggShorts.positions * ppIncrease + ppInitVolume;
-         o=OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_S");
+   
+   // determina se inserire un ordine di copertura
+   double bid_cover = ggShorts.worst+ppStepCover*Point;
+   double ask_cover = ggLongs.worst-ppStepCover*Point;
+   /*
+   Inserisco l'ordine se ci sono posizioni aperte contro il trend corrente
+   e se il prezzo è alla corretta distanza
+   */
+   if ((ggOrderTrend != ggTrend) && (ggOrderTrend != "n/a") && (ppCover)) {
+      if  ((ggOrderTrend == "DOWN") && (ggLongs.positions > 0) && 
+            (ggLongs.positions < ppMaxPos) && (ppLongPos) && (Ask < ask_cover)) {
+               double vol = ggLongs.positions * ppIncrease + ppInitVolume;
+               o=OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_L");
+               ggLongs.positions++;
+              
       }
-      if ((ggOrderTrend == "UP") && (ppLongPos)) {
-         if (ppCover)  {
-            vol = ggShorts.lots;
-            o=OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_H");
-         }
-         vol = ggLongs.positions * ppIncrease + ppInitVolume;
-         o=OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_L");
+      if  ((ggOrderTrend == "UP") && (ggShorts.positions > 0) && 
+            (ggShorts.positions < ppMaxPos) && (ppShortPos) && (Bid > bid_cover)) {
+               double vol = ggShorts.positions * ppIncrease + ppInitVolume;
+               o=OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_S");
+               ggShorts.positions++;
+              
       }
       
-	  
+      
    }
-   
+
+
+ 
 }
 
 void CheckProfits() {
@@ -224,6 +208,7 @@ void CheckProfits() {
 
    int rt;
    string subj,mex;
+   
    if (ggShorts.profit > ppCloseProfitShort) {
       if ((ppChopModeShort) && (!ppStopEven)) {
          // Chiudo solo l'ultimo ordine
@@ -233,7 +218,7 @@ void CheckProfits() {
             subj = StringFormat("YAGT. Chiuso SHORT su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
             mex = StringFormat("ORDINE CHIUSO\n\nSimbolo: %s\nLotti: %.2f\nProfit: %.2f\n",
                                     Symbol(),OrderLots(),OrderProfit());
-            SendMail(subj,mex);     
+            SendMail(subj,mex);
          }
       } else {
          // Chiudo tutti gli ordini short
