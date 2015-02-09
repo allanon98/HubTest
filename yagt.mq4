@@ -5,27 +5,31 @@
 //+------------------------------------------------------------------+
 #property copyright "Lorenzo Pedrotti & Simone Forini"
 #property link      "www.wannabetrader.com"
-#property version   "2.00"
+#property version   "3.00"
 #property strict
 //--- input parameters
-input string      ppSignature = "YAGT_0001"; // Session initial signature
+input string      ppSignature = "cambiami"; // Session initial signature
 input bool        ppChangeSig = false; // Change signature at trend change
-input bool        ppCover = false; // Place a cover orders at trend change
 
-input bool        ppLongPos = true; // Open long positions
-input bool        ppShortPos = true; // Open short positions
+input int         ppCoverMode = 0; // Place cover orders at trend change
+const int COVER_NONE = 0;
+const int COVER_SINGLE = 1;
+const int COVER_MULTI = 2;
 
+input string      ppAverages = "21;43;130"; // Averages to calculate trend direction
+input int         ppPeriod = 15; // Period of the averages (1,5,15,30,60)
 input int         ppInitDiff = 300; // Points up/down of the first pending orders
 input int         ppMaxPos = 10; // Max allowed positions (per trend/signature)
 
 input int         ppStep = 300; // Points before open a new position
-input int         ppStepCover = 600; // Points bebore open a new cover position
+input int         ppStepCover = 600; // Points before open a new cover position
 input double      ppInitVolume = 0.01; // Size of the first lot
 input double      ppIncrease = 0.0; // Size of the increment lot
 
-
 input double      ppCloseProfitLong = 5.0; // Close LONG when profit is at least (euro)
 input double      ppCloseProfitShort = 5.0; // Close SHORT when profit is at least (euro)
+
+input bool        ppCloseCoverProfit = true; // Close cover orders (mode=2) only if in profit
 
 input bool        ppChopModeLong = true; // Close only the newest LONG positions
 input bool        ppChopModeShort = true; // Close only the newest SHORT positions
@@ -56,15 +60,37 @@ orders_data ggShorts = {0,0,0,0,0,0};
 bool ggStopped = false;
 bool ggPending = false; // ci sono ancora gli ordini pending
 
+bool ggLongPos = true; // Open long positions
+bool ggShortPos = true; // Open short positions
+
+string ggAverages[];
+int ggNumAverages = 0; // numero di medie da usare per il cambio di trend 
+
 double ggBalance = 0; // contabilità interna del sistema
 
-string varBalance = "grid_Balance_" + Symbol();
+string varBalance = "grid_Balance_" + ppSignature;
+
+// Colors
+const int C_BREAKEVEN = clrYellow;
+const int C_NEXTENTRY = clrRed;
+const int C_NEXTCOVER = clrBlueViolet;
+
+int ggMinute = 0;
 
 int OnInit() {
+
 //--- create timer
    EventSetTimer(60);
    ggStopped = false;
+   ggPending = false;
+   ggLongPos = true; 
+   ggShortPos = true; 
+
+   MqlDateTime mdt;
+   datetime dt = TimeLocal(mdt);
+   ggMinute = mdt.min;
    
+   ggNumAverages = StringSplit(ppAverages,';',ggAverages);
    int start_at = 20;
    int delta = 15;
    MakeLabel("Trend","Trend",20,start_at);
@@ -74,9 +100,10 @@ int OnInit() {
    MakeLabel("Active","ACTIVE",150,start_at);
    MakeLabel("Balance","Profit: XX",250,start_at);
    
-   MakeLine("SellEven",STYLE_DASHDOTDOT,clrYellow,1);
-   MakeLine("BuyEven",STYLE_DASHDOTDOT,clrYellow,1);
-   MakeLine("NextEntry",STYLE_DOT,clrRed,1);
+   MakeLine("SellEven",STYLE_DASHDOTDOT,C_BREAKEVEN,1);
+   MakeLine("BuyEven",STYLE_DASHDOTDOT,C_BREAKEVEN,1);
+   MakeLine("NextEntry",STYLE_DOT,C_NEXTENTRY,1);
+   MakeLine("NextCover",STYLE_DOT,C_NEXTCOVER,1);
 
    if (GlobalVariableCheck(varBalance)) {
       ggBalance = GlobalVariableGet(varBalance);
@@ -84,6 +111,7 @@ int OnInit() {
       GlobalVariableSet(varBalance,ggBalance);
    }
 
+   Comment(StringFormat("Supergrid 2.00",1));
 
    CheckTrend();
    return(INIT_SUCCEEDED);
@@ -105,13 +133,26 @@ void OnTick() {
         ((ggLongs.positions==0) && (ggTrend == "UP")) ) 
             OpenPendingOrders();
    GlobalVariableSet(varBalance,ggBalance);
+   
+   
+   MqlDateTime mdt;
+   datetime dt = TimeLocal(mdt);
+   if (mdt.min != ggMinute) {
+      ggMinute = mdt.min;
+      ON_CandleChange();
+   }
+   
 }
 
-void OnTimer() {
+void ON_CandleChange() {
    ggBalance = GlobalVariableGet(varBalance);
+   CheckPending();
    CheckTrend();
    OpenNewOrders();
    GlobalVariableSet(varBalance,ggBalance);
+}
+
+void OnTimer() {
 }
 
 double OnTester() {
@@ -142,65 +183,144 @@ void DeletePending() {
    }
 }
 
+
+void CheckPending() {
+   int pending = 0;
+   int ticket = 0;
+   for (int k = OrdersTotal()-1; k>=0; k--) {
+      if (OrderSelect(k,SELECT_BY_POS,MODE_TRADES)) 
+         if ((OrderSymbol() == Symbol()) && (StartsWith(OrderComment(),ggSignature))) {
+            switch (OrderType()) {
+               case OP_BUYLIMIT:
+               case OP_BUYSTOP:
+               case OP_SELLLIMIT:
+               case OP_SELLSTOP: {
+                  pending++;
+                  ticket = OrderTicket();
+               }
+            }
+         }
+   }
+   if (pending == 1) {
+      int o=OrderDelete(ticket); 
+      ggOrderTrend = ggTrend;
+      ggPending = false;
+      string t = "n/a";
+      if (ggOrderTrend == "UP") t = "LONG"; 
+      if (ggOrderTrend == "DOWN") t = "SHORT";
+      ChangeLabel("Trend","Trend: " + ggTrend + " - " + t);
+   }
+   
+}
+
 void OpenNewOrders() {
-   if (ggStopped) return;
-   if (ggPending) return;
    
    // determina se inserire un nuovo ordine di rinforzo (stesso trend)
    int o=0;
    double bid_price = ggShorts.worst+ppStep*Point;
    double ask_price = ggLongs.worst-ppStep*Point;   
+   double bid_cover = 0;
+   double ask_cover = 0;
+
+   if (ppCoverMode == 1 || ppCoverMode == 2) {
+      bid_cover = ggShorts.worst+ppStepCover*Point;
+      ask_cover = ggLongs.worst-ppStepCover*Point;
+   }
 
    if (ggOrderTrend == "DOWN") {
       MoveLine("NextEntry",bid_price);
+      MoveLine("NextCover",ask_cover);
    }
    if (ggOrderTrend == "UP") {
       MoveLine("NextEntry",ask_price);
+      MoveLine("NextCover",bid_cover);
    }
+
+   if (ggStopped) return;
+   if (ggPending) return;
    
    // condizione generale per eseguire un trade
    if ((ggOrderTrend == ggTrend) || ((ggTrend=="n/a") && (ggOrderTrend!="n/a") )  ) {
-      if ((ggOrderTrend == "DOWN") && (Bid > bid_price) && (ggShorts.positions < ppMaxPos) && (ppShortPos) ) {
+      if ((ggOrderTrend == "DOWN") && (Bid > bid_price) && (ggShorts.positions < ppMaxPos) && (ggShortPos) ) {
          double vol = ggShorts.positions * ppIncrease + ppInitVolume;
-         o=OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_S");
+         o=TryOpenOrder(OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_S"));
          ggShorts.positions++;
       }
-      if ((ggOrderTrend == "UP") && (Ask < ask_price) && (ggLongs.positions < ppMaxPos) && (ppLongPos) ) {
+      if ((ggOrderTrend == "UP") && (Ask < ask_price) && (ggLongs.positions < ppMaxPos) && (ggLongPos) ) {
          double vol = ggLongs.positions * ppIncrease + ppInitVolume;
-         o=OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_L");
+         o=TryOpenOrder(OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_L"));
          ggLongs.positions++;
+      }
+      /*
+      determina se inserire un ordine di copertura
+      
+      Inserisco l'ordine se ci sono posizioni aperte contro il trend corrente
+      e se il prezzo è alla corretta distanza
+      */
+      if (ppCoverMode == COVER_MULTI) {
+         if  ((ggOrderTrend == "DOWN") && (ggLongs.positions > 0) && 
+               (ggLongs.positions < ppMaxPos) && (ggLongPos) && (Ask < ask_cover)) {
+                  double vol = ggLongs.positions * ppIncrease + ppInitVolume;
+                  o=TryOpenOrder(OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_L"));
+                  ggLongs.positions++;
+                 
+         }
+         if  ((ggOrderTrend == "UP") && (ggShorts.positions > 0) && 
+               (ggShorts.positions < ppMaxPos) && (ggShortPos) && (Bid > bid_cover)) {
+                  double vol = ggShorts.positions * ppIncrease + ppInitVolume;
+                  o=TryOpenOrder(OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_S"));
+                  ggShorts.positions++;
+                 
+         }
       }
    
    } 
    
-   // determina se inserire un ordine di copertura
-   double bid_cover = ggShorts.worst+ppStepCover*Point;
-   double ask_cover = ggLongs.worst-ppStepCover*Point;
-   /*
-   Inserisco l'ordine se ci sono posizioni aperte contro il trend corrente
-   e se il prezzo è alla corretta distanza
-   */
-   if ((ggOrderTrend != ggTrend) && (ggOrderTrend != "n/a") && (ppCover)) {
-      if  ((ggOrderTrend == "DOWN") && (ggLongs.positions > 0) && 
-            (ggLongs.positions < ppMaxPos) && (ppLongPos) && (Ask < ask_cover)) {
-               double vol = ggLongs.positions * ppIncrease + ppInitVolume;
-               o=OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_L");
-               ggLongs.positions++;
-              
+   // questa condizione si verifica se il trend viene invertito da CheckTrend
+   if (ggOrderTrend != ggTrend && ggTrend != "n/a")  {
+      /*
+      Inverto il trend ed inserisco il primo ordine nel nuovo trend
+      Piazzo un ordine contrario al precedente trend composto dalla somma dei lotti investiti
+      */
+      for (int k = OrdersTotal()-1; k>=0; k--) {
+         // Chiude le posizioni COVER precedenti
+         if (OrderSelect(k,SELECT_BY_POS,MODE_TRADES)) 
+            if (OrderSymbol() == Symbol() && OrderComment() == ggSignature + "_H") {
+               // dovrebbe essercene solo una
+               int mode = 0;
+               if (OrderType() == OP_BUY) mode = MODE_BID; 
+               if (OrderType() == OP_SELL) mode = MODE_ASK;
+               if (ppCloseCoverProfit==false || (ppCloseCoverProfit==true && OrderProfit()>0)) {
+                  int rt = OrderClose(OrderTicket(),OrderLots(),MarketInfo(Symbol(),mode),200);
+                  ggBalance+=OrderProfit();
+                  ChangeLabel("Balance",StringFormat("Profit: %.2f" ,ggBalance));
+                  string subj = StringFormat("Chiuso HEDGING su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
+                  string mex = StringFormat("ORDINE CHIUSO\n\nSimbolo: %s\nLotti: %.2f\nProfit: %.2f\n",
+                                          Symbol(),OrderLots(),OrderProfit());
+                  SendMail(subj,mex);     
+               }
+            }
       }
-      if  ((ggOrderTrend == "UP") && (ggShorts.positions > 0) && 
-            (ggShorts.positions < ppMaxPos) && (ppShortPos) && (Bid > bid_cover)) {
-               double vol = ggShorts.positions * ppIncrease + ppInitVolume;
-               o=OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_S");
-               ggShorts.positions++;
-              
+	   
+	   double vol;
+      ggOrderTrend = ggTrend; // inversione del trend di investimento
+      if ((ggOrderTrend == "DOWN") && (ggShortPos)) {
+         if (ppCoverMode == COVER_SINGLE)  {
+            vol = ggLongs.lots;
+            o=TryOpenOrder(OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_H"));
+         }
+         vol = ggShorts.positions * ppIncrease + ppInitVolume;
+         o=TryOpenOrder(OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_S"));
       }
-      
-      
+      if ((ggOrderTrend == "UP") && (ggLongPos)) {
+         if (ppCoverMode == COVER_SINGLE)  {
+            vol = ggShorts.lots;
+            o=TryOpenOrder(OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_H"));
+         }
+         vol = ggLongs.positions * ppIncrease + ppInitVolume;
+         o=TryOpenOrder(OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_L"));
+      }
    }
-
-
- 
 }
 
 void CheckProfits() {
@@ -215,7 +335,7 @@ void CheckProfits() {
          if (OrderSelect(ggShorts.last_ticket,SELECT_BY_TICKET)) {
             rt = OrderClose(OrderTicket(),OrderLots(),MarketInfo(Symbol(),MODE_ASK),200);
             ggBalance += OrderProfit();
-            subj = StringFormat("YAGT. Chiuso SHORT su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
+            subj = StringFormat("Chiuso SHORT su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
             mex = StringFormat("ORDINE CHIUSO\n\nSimbolo: %s\nLotti: %.2f\nProfit: %.2f\n",
                                     Symbol(),OrderLots(),OrderProfit());
             SendMail(subj,mex);
@@ -227,7 +347,7 @@ void CheckProfits() {
                if ((OrderSymbol() == Symbol()) && (OrderType() == OP_SELL) && (OrderComment() == ggSignature + "_S")) {
                   rt = OrderClose(OrderTicket(),OrderLots(),MarketInfo(Symbol(),MODE_ASK),200);
                   ggBalance += OrderProfit();
-                  subj = StringFormat("YAGT. Chiuso SHORT su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
+                  subj = StringFormat("Chiuso SHORT su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
                   mex = StringFormat("ORDINE CHIUSO\n\nSimbolo: %s\nLotti: %.2f\nProfit: %.2f\n",
                                           Symbol(),OrderLots(),OrderProfit());
                   SendMail(subj,mex);     
@@ -246,7 +366,7 @@ void CheckProfits() {
          if (OrderSelect(ggLongs.last_ticket,SELECT_BY_TICKET)) {
             rt = OrderClose(OrderTicket(),OrderLots(),MarketInfo(Symbol(),MODE_BID),200);
             ggBalance += OrderProfit();
-            subj = StringFormat("YAGT. Chiuso LONG su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
+            subj = StringFormat("Chiuso LONG su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
             mex = StringFormat("ORDINE CHIUSO\n\nSimbolo: %s\nLotti: %.2f\nProfit: %.2f\n",
                                     Symbol(),OrderLots(),OrderProfit());
             SendMail(subj,mex);     
@@ -258,7 +378,7 @@ void CheckProfits() {
                if ((OrderSymbol() == Symbol()) && (OrderType() == OP_BUY) && (OrderComment() == ggSignature + "_L")) {
                   rt = OrderClose(OrderTicket(),OrderLots(),MarketInfo(Symbol(),MODE_BID),200);
                   ggBalance += OrderProfit();
-                  subj = StringFormat("YAGT. Chiuso LONG su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
+                  subj = StringFormat("Chiuso LONG su %s - %s a %.2f",Symbol(),OrderComment(),OrderProfit());
                   mex = StringFormat("ORDINE CHIUSO\n\nSimbolo: %s\nLotti: %.2f\nProfit: %.2f\n",
                                           Symbol(),OrderLots(),OrderProfit());
                   SendMail(subj,mex);     
@@ -328,7 +448,6 @@ void CheckRunningOrders() {
    // Visualizza i dati sugli ordini aperti
    // ESCE se esistono già ordini aperti o pendenti con questa Signature
    if ((ggShorts.positions > 0) || (ggLongs.positions > 0)) { 
-      DeletePending();
       if (ggLongs.positions >0) {
          ggLongs.average = ggLongs.average / ggLongs.lots;
          ChangeLabel("Longs",StringFormat("LONGS - Pos: %d - Lots: %.2f - Prof: %.2f - Avg: %.4f",
@@ -360,12 +479,12 @@ void OpenPendingOrders() {
    }
    
    double dist = Point*ppInitDiff;
-   if ((ggTrend == "UP") && (ppLongPos)) {
+   if ((ggTrend == "UP") && (ggLongPos)) {
       if (!TryOpenOrder(OrderSend(Symbol(),OP_BUYLIMIT, ppInitVolume,Ask-dist,200,0,0,ggSignature + "_L",0))) return;
       if (!TryOpenOrder(OrderSend(Symbol(),OP_BUYSTOP, ppInitVolume,Ask+dist,200,0,0,ggSignature+ "_L",0))) return;
       ggPending = true;
    }
-   if ((ggTrend == "DOWN") && (ppShortPos)) {
+   if ((ggTrend == "DOWN") && (ggShortPos)) {
       if (!TryOpenOrder(OrderSend(Symbol(),OP_SELLLIMIT, ppInitVolume,Bid+dist,200,0,0,ggSignature + "_S",0))) return;
       if (!TryOpenOrder(OrderSend(Symbol(),OP_SELLSTOP, ppInitVolume,Bid-dist,200,0,0,ggSignature + "_S",0))) return;
       ggPending = true;
@@ -374,8 +493,19 @@ void OpenPendingOrders() {
 
 bool TryOpenOrder(int result) {
    if (result == -1) {
-      Alert("Error code: " + string(GetLastError()));
-      Alert("Stopped");
+      int err = GetLastError();
+      Alert("Error code: " + string(err));
+      if (err == ERR_LONGS_NOT_ALLOWED) {
+         Alert("No long positions");
+         ggLongPos = false;
+         return false;
+      }
+      if (err == ERR_SHORTS_NOT_ALLOWED) {
+         Alert("No short positions");
+         ggShortPos = false;
+         return false;
+      }     
+      Print("Stopped");
       ggStopped = true;
       ChangeLabel("Active","STOPPED");
       DeletePending();
@@ -387,16 +517,38 @@ bool TryOpenOrder(int result) {
 }
 
 void CheckTrend() {
-   int per = PERIOD_M5;
-   double c_fast = iMA(NULL,per,21,0,MODE_EMA,PRICE_CLOSE,0);
-   double c_slow = iMA(NULL,per,43,0,MODE_EMA,PRICE_CLOSE,0);
-   double c_test = iMA(NULL,per,130,0,MODE_EMA,PRICE_CLOSE,0); // media di test
+   //ggTrend = "n/a";  
 
-   ggTrend = "n/a";  
-   if ((c_fast > c_slow) && (c_slow > c_test) ) ggTrend = "UP";
-   if ((c_fast < c_slow) && (c_slow < c_test) ) ggTrend = "DOWN";
+   double c_fast = iMA(NULL,ppPeriod,int(ggAverages[0]),0,MODE_EMA,PRICE_CLOSE,0);
+   double c_slow = iMA(NULL,ppPeriod,int(ggAverages[1]),0,MODE_EMA,PRICE_CLOSE,0);
+
+   if (ggNumAverages == 2) {
+      if (c_fast > c_slow) ggTrend = "UP";
+      if (c_fast < c_slow ) ggTrend = "DOWN";   
+   }
+   if (ggNumAverages == 3) {
+      double c_test = iMA(NULL,ppPeriod,int(ggAverages[2]),0,MODE_EMA,PRICE_CLOSE,0); // media di test
+      /*
+      Con trend indefinito controllo l'incrocio con le 3 medie.
+      Con trend definito controllo solo le 2 veloci. Se incrociano in direzione opposta 
+         il trend diventa indefinito fino all'incrocio con la media di test
+         oppure se incrociano nuovamente
+      */
+      if (ggTrend == "n/a") {
+         if (c_fast > c_slow && c_slow > c_test) ggTrend = "UP";
+         if (c_fast < c_slow && c_slow < c_test) ggTrend = "DOWN";
+      } 
+      if (ggTrend == "UP" && c_fast < c_slow) {
+         ggTrend = "n/a"; // controllerà al prossimo giro la terza media
+      }
+      if (ggTrend == "DOWN" && c_fast > c_slow) {
+         ggTrend = "n/a";
+      }
+   }
    
    if (ggOrderTrend == "n/a") ggOrderTrend = ggTrend; // questo per le ripartenze
+   
+   //if (ggTrend != "n/a") ggOrderTrend = ggTrend; // il trend viene cambiato in OpenNewOrders
    
    string t = "n/a";
    if (ggOrderTrend == "UP") t = "LONG"; 
