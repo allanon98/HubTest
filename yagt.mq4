@@ -29,7 +29,7 @@ input double      ppIncrease = 0.0; // Size of the increment lot
 input double      ppCloseProfitLong = 5.0; // Close LONG when profit is at least (euro)
 input double      ppCloseProfitShort = 5.0; // Close SHORT when profit is at least (euro)
 
-input bool        ppCloseCoverProfit = true; // Close cover orders (mode=2) only if in profit
+input bool        ppCloseCoverProfit = true; // Close cover orders (mode=1) only if in profit
 
 input bool        ppChopModeLong = true; // Close only the newest LONG positions
 input bool        ppChopModeShort = true; // Close only the newest SHORT positions
@@ -222,7 +222,7 @@ void OpenNewOrders() {
    double bid_cover = 0;
    double ask_cover = 0;
 
-   if (ppCoverMode == 1 || ppCoverMode == 2) {
+   if (ppCoverMode == 2) {
       bid_cover = ggShorts.worst+ppStepCover*Point;
       ask_cover = ggLongs.worst-ppStepCover*Point;
    }
