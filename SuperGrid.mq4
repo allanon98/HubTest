@@ -66,7 +66,7 @@ bool ggShortPos = true; // Open short positions
 string ggAverages[];
 int ggNumAverages = 0; // numero di medie da usare per il cambio di trend 
 
-double ggBalance = 0; // contabilitÃ  interna del sistema
+double ggBalance = 0; // contabilità interna del sistema
 
 string varBalance = "grid_Balance_" + ppSignature;
 
@@ -255,7 +255,7 @@ void OpenNewOrders() {
       determina se inserire un ordine di copertura
       
       Inserisco l'ordine se ci sono posizioni aperte contro il trend corrente
-      e se il prezzo Ã¨ alla corretta distanza
+      e se il prezzo è alla corretta distanza
       */
       if (ppCoverMode == COVER_MULTI) {
          if  ((ggOrderTrend == "DOWN") && (ggLongs.positions > 0) && 
@@ -446,7 +446,7 @@ void CheckRunningOrders() {
       }
    }
    // Visualizza i dati sugli ordini aperti
-   // ESCE se esistono giÃ  ordini aperti o pendenti con questa Signature
+   // ESCE se esistono già ordini aperti o pendenti con questa Signature
    if ((ggShorts.positions > 0) || (ggLongs.positions > 0)) { 
       if (ggLongs.positions >0) {
          ggLongs.average = ggLongs.average / ggLongs.lots;
@@ -539,7 +539,7 @@ void CheckTrend() {
          if (c_fast < c_slow && c_slow < c_test) ggTrend = "DOWN";
       } 
       if (ggTrend == "UP" && c_fast < c_slow) {
-         ggTrend = "n/a"; // controllerÃ  al prossimo giro la terza media
+         ggTrend = "n/a"; // controllerà al prossimo giro la terza media
       }
       if (ggTrend == "DOWN" && c_fast > c_slow) {
          ggTrend = "n/a";
