@@ -96,23 +96,21 @@ int OnCalculate(const int rates_total,
       CloseBuffer[i] = 0;
       if (ppAvg1 > 0) {
          if (ppMode == MODE_LOW_HIGH) {
-            b1 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,0,0,i); // davanti
-            b0 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,0,0,i+1); // centrale
-            b2 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,0,0,i+2); // dietro
+            b1 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,i); // davanti
+            b0 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,i+1); // centrale
+            b2 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,i+2); // dietro
             //Print(b1," § ", b0," § ", b2);
             if (b1 > b0 && b2 > b0) CloseBuffer[i] = low[i] - ggDistance;
             if (b1 < b0 && b2 < b0) CloseBuffer[i] = high[i] + ggDistance;
          }
          if (ppMode == MODE_ZERO_CROSS) {
-            b1 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,0,0,i); // davanti
-            b2 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,0,0,i+1); // dietro
-            if (b1 > 0 && b2 < 0) InvertUpBuffer[i] = low[i] - ggDistance;
-            if (b1 < 0 && b2 > 0) InvertDownBuffer[i] = high[i] + ggDistance;
+            b1 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,i); // davanti
+            b2 = iCustom(NULL,0,"AverageSpeed",ppAvg1,0,i+1); // dietro
+            if (b1 >= 0 && b2 < 0) InvertUpBuffer[i] = low[i] - ggDistance;
+            if (b1 <= 0 && b2 > 0) InvertDownBuffer[i] = high[i] + ggDistance;
          }
       }
    }
-
-
 
    return(rates_total);
 }
