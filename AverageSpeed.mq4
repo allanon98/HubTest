@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Lorenzo Pedrotti"
 #property link      "www.wannabetrader.com"
-#property version   "1.00"
+#property version   "1.01"
 #property strict
 #property indicator_separate_window
 #property indicator_buffers 3
