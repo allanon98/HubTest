@@ -5,11 +5,11 @@
 //+------------------------------------------------------------------+
 #property copyright "Lorenzo Pedrotti & Simone Forini"
 #property link      "www.wannabetrader.com"
-#property version   "3.02"
+#property version   "3.03"
 #property strict
 //--- input parameters
 
-const string VERSION = "3.02";
+const string VERSION = "3.03";
 
 
 input string      ppSignature = "cambiami"; // Session initial signature
@@ -220,7 +220,6 @@ void CheckPending() {
 
 void OpenNewOrders() {
    
-   // determina se inserire un nuovo ordine di rinforzo (stesso trend)
    int o=0;
    double bid_price = ggShorts.worst+ppStep*Point;
    double ask_price = ggLongs.worst-ppStep*Point;   
@@ -350,6 +349,7 @@ void CheckProfits() {
 
    int rt;
    string subj,mex;
+   double real_profit;
    
    if (ggShorts.profit > ppCloseProfitShort) {
       if ((ppChopModeShort) && (!ppStopEven)) {
@@ -413,6 +413,44 @@ void CheckProfits() {
          }
       }
    }
+   
+   if (ggLongs.hedged) {
+      for (int k=OrdersTotal()-1;k>=0;k--) {
+         if (OrderSelect(k,SELECT_BY_POS,MODE_TRADES)) {
+            real_profit = OrderProfit() + OrderCommission() + OrderSwap();
+            if (OrderSymbol() == Symbol() && OrderType() == OP_BUY 
+                  && (OrderComment() == ggSignature + "_HL") && real_profit > 15) {
+               rt = OrderClose(OrderTicket(),OrderLots(),MarketInfo(Symbol(),MODE_BID),200);
+               ggBalance += real_profit;
+               subj = StringFormat("Chiuso HEDGING su %s - %s a %.2f",Symbol(),OrderComment(),real_profit);
+               mex = StringFormat("ORDINE CHIUSO\n\nSimbolo: %s\nLotti: %.2f\nProfit: %.2f\n",
+                                       Symbol(),OrderLots(),real_profit);
+               SendMail(subj,mex);   
+               ggLongs.hedged = false;  
+            }
+         }
+      }
+   }
+   if (ggShorts.hedged) {
+      for (int k=OrdersTotal()-1;k>=0;k--) {
+         if (OrderSelect(k,SELECT_BY_POS,MODE_TRADES)) {
+            real_profit = OrderProfit() + OrderCommission() + OrderSwap();
+            if (OrderSymbol() == Symbol() && OrderType() == OP_SELL
+                  && (OrderComment() == ggSignature + "_HS") && real_profit > 15) {
+               rt = OrderClose(OrderTicket(),OrderLots(),MarketInfo(Symbol(),MODE_ASK),200);
+               ggBalance += real_profit;
+               subj = StringFormat("Chiuso HEDGING su %s - %s a %.2f",Symbol(),OrderComment(),real_profit);
+               mex = StringFormat("ORDINE CHIUSO\n\nSimbolo: %s\nLotti: %.2f\nProfit: %.2f\n",
+                                       Symbol(),OrderLots(),real_profit);
+               SendMail(subj,mex); 
+               ggShorts.hedged = false;    
+            }
+         }
+      }
+   }
+      
+   
+   
    ChangeLabel("Balance",StringFormat("Profit: %.2f" ,ggBalance));
 }
 
