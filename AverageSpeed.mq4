@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Lorenzo Pedrotti"
 #property link      "www.wannabetrader.com"
-#property version   "1.01"
+#property version   "1.00"
 #property strict
 #property indicator_separate_window
 #property indicator_buffers 3
@@ -46,7 +46,7 @@ int OnCalculate(const int rates_total,
                 const int &spread[])
 {
    
-   if (rates_total < ppAvg1) return 0;
+   //if (rates_total < ppAvg1) return 0;
    
    
    int limit=rates_total-prev_calculated;

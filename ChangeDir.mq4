@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Lorenzo Pedrotti"
 #property link      "www.wannabetrader.com"
-#property version   "2.01"
+#property version   "2.00"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 3
@@ -23,6 +23,12 @@
 #property indicator_style2  STYLE_SOLID
 #property indicator_width2  1
 
+#property indicator_label3  "ClosePos"
+#property indicator_type3   DRAW_ARROW
+#property indicator_color3  clrYellow
+#property indicator_style3  STYLE_SOLID
+#property indicator_width3  1
+
 //--- input parameters
 input int      ppAvg1=21; // Periods of the Average
 
@@ -33,6 +39,7 @@ const int      MODE_ZERO_CROSS = 2;
 //--- indicator buffers
 double         InvertDownBuffer[];
 double         InvertUpBuffer[];
+double         CloseBuffer[];
 //+------------------------------------------------------------------+
 //| Custom indicator initialization function                         |
 //+------------------------------------------------------------------+
@@ -44,6 +51,8 @@ int OnInit()
    SetIndexBuffer(0,InvertDownBuffer);
    SetIndexArrow(1, 233);
    SetIndexBuffer(1,InvertUpBuffer);
+   SetIndexArrow(2, 74);
+   SetIndexBuffer(2,CloseBuffer);
    
    
 //---
@@ -84,6 +93,7 @@ int OnCalculate(const int rates_total,
    for(int i=0; i<limit; i++) {
       InvertUpBuffer[i] = 0;
       InvertDownBuffer[i] = 0;
+      CloseBuffer[i] = 0;
       if (ppAvg1 > 0) {
          if (ppMode == MODE_ANY_CROSS) {
             

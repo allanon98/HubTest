@@ -5,12 +5,16 @@
 //+------------------------------------------------------------------+
 #property copyright "Lorenzo Pedrotti"
 #property link      "http://www.wannabetrader.com"
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
 //--- input parameters
-input int      ppTimeFrame = 1; // Timeframe of the EA
+input int      ppTimeFrame = 5; // Timeframe of the EA
 input int      ppAvg1 = 21; // Timeframe of the speed average
+// CI ANDREBBERO ANCHE GLI ALTRI PARAMETRI o abolire anche questo
+input int      ppStopLoss = 150; // Points for the stop loss
+input int      ppTakeProfit = 300; // Points for take profit
+
 
 
 input color    ppLabelColor = clrAqua;
@@ -35,10 +39,15 @@ s_order_data ggShort = {0,0,0};
 
 double ggBalance = 0;
 
-string ggLabel = "TH_"; 
+string ggLabel = "TH_" + Symbol(); 
+int ggMinute = 0;
+string varBalance = "Balance_" + ggLabel;
+
+int ggMagic = 1;
+
 
 int OnInit(){
-   ggLabel = "TH_" + Symbol();
+   //ggLabel = "TH_" + Symbol();
    ggTrend = ggTrend_old = "X";
 
    Comment(ggLabel);
@@ -49,7 +58,22 @@ int OnInit(){
    xMakeLabel("Short","Short:",20,start_at+=delta);
    xMakeLabel("Balance","Balance:",20,start_at+=delta);
    
+   MqlDateTime mdt;
+   datetime dt = TimeLocal(mdt);
+   ggMinute = mdt.min;
    
+   if (GlobalVariableCheck(varBalance)) {
+      ggBalance = GlobalVariableGet(varBalance);
+   } else {
+      GlobalVariableSet(varBalance,ggBalance);
+   }
+   
+   // crea il magic number
+   for (int y=0; y<StringLen(Symbol()); y++) {
+      ggMagic = ggMagic * StringGetChar(Symbol(),y);
+   }
+   ggMagic = MathAbs(ggMagic);
+   //Alert(ggMagic);
    
    return(INIT_SUCCEEDED);
 }
@@ -64,15 +88,18 @@ void OnDeinit(const int reason){
 //| Expert tick function                                             |
 //+------------------------------------------------------------------+
 void OnTick(){
-   
+   ggBalance = GlobalVariableGet(varBalance);
+   if (ggBalance > 0) {
+      SendMail(StringFormat("TrendHunder %s",Symbol()),StringFormat("Balance stored: %.2f",ggBalance));
+      ggBalance = 0;
+   }
    zCheckOrders();
    zCheckTrend();
-   zPlaceOrders();
    if (ggTrend_old != ggTrend) {
       zPlaceOrders();
       ggTrend_old = ggTrend;
    }
-   
+   GlobalVariableSet(varBalance,ggBalance);
    
 }
 //+------------------------------------------------------------------+
@@ -85,31 +112,36 @@ Short il contrario
    double PositionSize = 0.01;
    double Target = 0;
    int x;
+   double lBalance = ggBalance; // così non interferisce con il calcolo del balance
+   
    if (ggTrend == "U" && ggLong.lots == 0) {
-   //if ( ggLong.lots == 0) {
-      Target = Ask+300*Point;
-      if (ggBalance < 0) {
-         PositionSize = xPosSize(Symbol(),MathAbs(ggBalance),1000,Ask,Target);
-         if (PositionSize < 0.01) PositionSize = 0.01;
-      } 
-      x = OrderSend(Symbol(),OP_BUY,PositionSize,Ask,200,Bid-200*Point,Target,ggLabel,123456,0,clrYellow);
       // controllo eventuali ordini short da chiudere
-      if (ggShort.ticket != 0 && ggShort.profit > 0) {
+      if (ggShort.ticket != 0 /* && ggShort.profit > 0 */) {
          x = OrderSelect(ggShort.ticket,SELECT_BY_TICKET);
          x = OrderClose(ggShort.ticket,OrderLots(),MarketInfo(Symbol(),MODE_ASK),200,clrRed);
+         lBalance += OrderProfit() + OrderCommission() + OrderSwap();
       }
-   }
-   if (ggTrend == "D" && ggShort.lots == 0) {
-      Target = Bid-300*Point;
-      if (ggBalance < 0) {
-         PositionSize = xPosSize(Symbol(),MathAbs(ggBalance),1000,Bid,Target);
+      Target = Ask+ppTakeProfit*Point;
+      if (lBalance < 0) {
+         PositionSize = xPosSize(Symbol(),MathAbs(lBalance),10000,Ask,Target);
          if (PositionSize < 0.01) PositionSize = 0.01;
       } 
-      x = OrderSend(Symbol(),OP_SELL,PositionSize,Bid,200,Ask+200*Point,Target,ggLabel,123456,0,clrYellow);
-      if (ggLong.ticket != 0 && ggLong.profit > 0) {
+      x = OrderSend(Symbol(),OP_BUY,PositionSize*1.5,Ask,200,Bid-ppStopLoss*Point,Target,ggLabel,ggMagic,0,clrYellow);
+      
+   }
+   if (ggTrend == "D" && ggShort.lots == 0) {
+      if (ggLong.ticket != 0 /* && ggLong.profit > 0 */) {
          x = OrderSelect(ggLong.ticket,SELECT_BY_TICKET);
          x = OrderClose(ggLong.ticket,OrderLots(),MarketInfo(Symbol(),MODE_BID),200,clrRed);
+         lBalance += OrderProfit() + OrderCommission() + OrderSwap();
       }
+
+      Target = Bid-ppTakeProfit*Point;
+      if (lBalance < 0) {
+         PositionSize = xPosSize(Symbol(),MathAbs(lBalance),10000,Bid,Target);
+         if (PositionSize < 0.01) PositionSize = 0.01;
+      } 
+      x = OrderSend(Symbol(),OP_SELL,PositionSize*1.5,Bid,200,Ask+ppStopLoss*Point,Target,ggLabel,ggMagic,0,clrYellow);
          
    }
 
@@ -172,22 +204,32 @@ void zCheckOrders() {
 
 }
 
-
-
+/*
 void zCheckTrend() {
  
-/*
-   double t_down = iCustom(NULL,ppTimeFrame,"ChangeDir",avg,mode,0,1); 
-   double t_up = iCustom(NULL,ppTimeFrame,"ChangeDir",avg,mode,1,1); 
-   if (t_down != 0) ggTrend = "D";
-   if (t_up != 0) ggTrend = "U";
-*/   
    double b1 = iCustom(NULL,ppTimeFrame,"AverageSpeed",ppAvg1,0,1); // davanti
    double b2 = iCustom(NULL,ppTimeFrame,"AverageSpeed",ppAvg1,0,2); // dietro
    if (b1 >= 0 && b2 < 0) ggTrend = "U";
    if (b1 < 0 && b2 >= 0) ggTrend = "D";
    
    xChangeLabel("Trend","Trend: " + ggTrend + " - " + ggTrend_old);   
+}
+
+*/
+
+void zCheckTrend() {
+
+   // questo simula la modalità 1 di ChangeDir
+   double b1_a = iCustom(NULL,0,"PZ_Average_Speed",ppAvg1,9,3, 1,1); // linea davanti
+   double b1_d = iCustom(NULL,0,"PZ_Average_Speed",ppAvg1,9,3, 1,2); // dietro
+   double b2_a = iCustom(NULL,0,"PZ_Average_Speed",ppAvg1,9,3, 2,1); // signal davanti
+   double b2_d = iCustom(NULL,0,"PZ_Average_Speed",ppAvg1,9,3, 2,2); // dietro
+   if (b1_a > b2_a && b1_d < b2_d) ggTrend = "U";
+   if (b1_a < b2_a && b1_d > b2_d) ggTrend = "D";
+   
+
+  
+   xChangeLabel("Trend",StringFormat("%s Trend: %s - %s  - TF: %d" ,ggLabel, ggTrend ,ggTrend_old,ppTimeFrame));   
 }
 
 
