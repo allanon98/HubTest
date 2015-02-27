@@ -5,11 +5,11 @@
 //+------------------------------------------------------------------+
 #property copyright "Lorenzo Pedrotti & Simone Forini"
 #property link      "www.wannabetrader.com"
-#property version   "3.03"
+#property version   "3.04"
 #property strict
 //--- input parameters
 
-const string VERSION = "3.03";
+const string VERSION = "3.04";
 
 
 input string      ppSignature = "cambiami"; // Session initial signature
@@ -139,10 +139,11 @@ void OnTick() {
             OpenPendingOrders();
    GlobalVariableSet(varBalance,ggBalance);
    
+   CheckPending();
    
    MqlDateTime mdt;
    datetime dt = TimeLocal(mdt);
-   if (mdt.min != ggMinute) {
+   if (mdt.min != ggMinute && MathMod(mdt.min,Period())==0 ) {
       ggMinute = mdt.min;
       ON_CandleChange();
    }
@@ -151,7 +152,7 @@ void OnTick() {
 
 void ON_CandleChange() {
    ggBalance = GlobalVariableGet(varBalance);
-   CheckPending();
+   
    CheckTrend();
    OpenNewOrders();
    GlobalVariableSet(varBalance,ggBalance);
@@ -292,8 +293,10 @@ void OpenNewOrders() {
             o=TryOpenOrder(OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_HS"));
             ggShorts.hedged = true;
          }
+		 /*
          vol = ggShorts.positions * ppIncrease + ppInitVolume;
          o=TryOpenOrder(OrderSend(Symbol(),OP_SELL,vol,Bid,200,0,0,ggSignature + "_S"));
+		 */
       }
       if ((ggOrderTrend == "UP") && (ggLongPos)) {
          if (ppCoverMode == COVER_SINGLE && !ggLongs.hedged)  {
@@ -301,8 +304,10 @@ void OpenNewOrders() {
             o=TryOpenOrder(OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_HL"));
             ggLongs.hedged = true;
          }
+		 /*
          vol = ggLongs.positions * ppIncrease + ppInitVolume;
          o=TryOpenOrder(OrderSend(Symbol(),OP_BUY,vol,Ask,200,0,0,ggSignature + "_L"));
+		 */
       }
    }
 }
