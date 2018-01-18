@@ -3,6 +3,9 @@
 //|                                                 Lorenzo Pedrotti |
 //|                                     http://www.wannabetrader.com |
 //+------------------------------------------------------------------+
+
+/// modificato per prova con git
+
 #property copyright "Lorenzo Pedrotti"
 #property link      "http://www.wannabetrader.com"
 #property version   "2.00"
