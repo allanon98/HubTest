@@ -8,6 +8,8 @@
 #property version   "2.00"
 #property strict
 
+//modificato con git
+
 //--- input parameters
 input int      ppTimeFrame = 5; // Timeframe of the EA
 input int      ppAvg1 = 21; // Timeframe of the speed average
