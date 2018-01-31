@@ -11,7 +11,7 @@
 #property version   "2.00"
 #property strict
 
-//modificato con git
+//modificato da Allanon98
 
 //--- input parameters
 input int      ppTimeFrame = 5; // Timeframe of the EA
@@ -117,7 +117,7 @@ Short il contrario
    double PositionSize = 0.01;
    double Target = 0;
    int x;
-   double lBalance = ggBalance; // cosÏ non interferisce con il calcolo del balance
+   double lBalance = ggBalance; // cos√¨ non interferisce con il calcolo del balance
    
    if (ggTrend == "U" && ggLong.lots == 0) {
       // controllo eventuali ordini short da chiudere
@@ -161,7 +161,7 @@ void zCheckOrders() {
    if (ggLong.ticket != 0) {
       if (OrderSelect(ggLong.ticket,SELECT_BY_TICKET)) {
          if (OrderCloseTime() != 0) {
-            // Ë in history, quindi chiuso
+            // √® in history, quindi chiuso
             ggBalance += OrderProfit() + OrderCommission() + OrderSwap();
          }
       }
@@ -224,7 +224,7 @@ void zCheckTrend() {
 
 void zCheckTrend() {
 
-   // questo simula la modalit‡ 1 di ChangeDir
+   // questo simula la modalit√† 1 di ChangeDir
    double b1_a = iCustom(NULL,0,"PZ_Average_Speed",ppAvg1,9,3, 1,1); // linea davanti
    double b1_d = iCustom(NULL,0,"PZ_Average_Speed",ppAvg1,9,3, 1,2); // dietro
    double b2_a = iCustom(NULL,0,"PZ_Average_Speed",ppAvg1,9,3, 2,1); // signal davanti
