@@ -8,6 +8,8 @@
 #property version   "2.00"
 #property strict
 
+// modificato per vedere se arriva nella versione forked
+
 //--- input parameters
 input bool     AutoClose=false; // Chiudi gli ordini all'obiettivo indicato
 input bool     OnlyProfit=false; // Chiudi solo gli ordini in profit
